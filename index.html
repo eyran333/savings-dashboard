@@ -12,6 +12,10 @@
   .kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; max-width:1400px; margin-left:auto; margin-right:auto;}
   .kpi { background:#fff; padding:18px 24px; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.06); text-align:center; border-top:4px solid #3498db;}
   .kpi.networth { border-top-color:#27ae60;}
+  .kpi.networth .value { filter: blur(10px); transition: filter 0.25s ease; cursor:pointer; user-select:none;}
+  .kpi.networth:hover .value, .kpi.networth .value.revealed { filter: blur(0);}
+  .kpi.networth::after { content:"🔒 רחף לחשיפה"; display:block; font-size:10px; color:#95a5a6; margin-top:4px;}
+  .kpi.networth:hover::after, .kpi.networth.revealed::after { content:"";}
   .kpi.monthly { border-top-color:#3498db;}
   .kpi.coverage { border-top-color:#9b59b6;}
   .kpi.count { border-top-color:#f39c12;}
@@ -96,7 +100,7 @@
 
 <div id="status"></div>
 
-<h1>💰 שווי נטו - משפחת אליאס</h1>
+<h1>💰 שווי חסכונות - משפחת אליאס</h1>
 <div class="subtitle">סקירת חסכונות, פנסיות, השתלמות, וכיסוי ביטוחי</div>
 
 <div class="kpis">
@@ -226,6 +230,15 @@ function status(msg, isError) {
 
 function fmt(n) { return Math.round(n).toLocaleString() + ' ₪'; }
 
+function fmtFee(v) {
+  if (v == null || v === '') return '—';
+  const s = String(v).trim();
+  // If the string is a plain number (no % yet), append %
+  if (/^-?\d+(\.\d+)?$/.test(s)) return s + '%';
+  // Already contains % or descriptive text → show as-is
+  return s;
+}
+
 async function api(action, payload) {
   const res = await fetch(WEB_APP_URL, {
     method: 'POST',
@@ -347,7 +360,7 @@ function renderTable(rows) {
       <td>${escapeHtml(a.employer)}</td>
       <td><strong>${fmt(a.balance)}</strong></td>
       <td>${a.monthlyDeposit ? fmt(a.monthlyDeposit) : '—'}</td>
-      <td>${escapeHtml(a.mgmtFee) || '—'}</td>
+      <td>${escapeHtml(fmtFee(a.mgmtFee))}</td>
       <td onclick="event.stopPropagation()">
         <div class="row-actions">
           <button class="btn btn-edit btn-sm" onclick="openForm(${a.id})">ערוך</button>
@@ -365,7 +378,7 @@ function showDetail(id) {
     ['מוסד', a.institution], ['מעסיק', a.employer || '—'], ['פוליסה', a.policy || '—'],
     ['יתרה / סכום ביטוח', '<strong>'+fmt(a.balance)+'</strong>'],
     ['הפקדה חודשית', a.monthlyDeposit ? fmt(a.monthlyDeposit) : '—'],
-    ['דמי ניהול', a.mgmtFee || '—'], ['מסלול', a.track || '—'],
+    ['דמי ניהול', fmtFee(a.mgmtFee)], ['מסלול', a.track || '—'],
     ['סוכן', a.agent || '—'], ['הערות', escapeHtml(a.notes) || '—'],
   ];
   document.getElementById('detailBody').innerHTML = fields.map(([l,v])=>`<div class="row"><div class="label">${l}</div><div class="val">${v}</div></div>`).join('');
