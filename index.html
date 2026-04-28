@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Net worth dashboard -->
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -143,6 +144,7 @@
           <th class="sortable" data-sort="product">מוצר <span class="arrow"></span></th>
           <th class="sortable" data-sort="kind">סוג <span class="arrow"></span></th>
           <th class="sortable" data-sort="institution">מוסד <span class="arrow"></span></th>
+          <th class="sortable" data-sort="track">מסלול השקעה <span class="arrow"></span></th>
           <th class="sortable" data-sort="employer">מעסיק <span class="arrow"></span></th>
           <th class="sortable" data-sort="policy">פוליסה <span class="arrow"></span></th>
           <th class="sortable" data-sort="balance">יתרה <span class="arrow"></span></th>
@@ -356,13 +358,14 @@ function kindBadge(k) {
 
 function renderTable(rows) {
   const tb = document.getElementById('tbody');
-  if (!rows.length) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#95a5a6;padding:20px;">אין נכסים</td></tr>'; return; }
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#95a5a6;padding:20px;">אין נכסים</td></tr>'; return; }
   tb.innerHTML = rows.map(a => `
     <tr onclick="showDetail(${a.id})">
       <td>${escapeHtml(a.client)}</td>
       <td>${escapeHtml(a.product)}</td>
       <td>${kindBadge(a.kind)}</td>
       <td>${escapeHtml(a.institution)}</td>
+      <td>${escapeHtml(a.track) || '—'}</td>
       <td>${escapeHtml(a.employer)}</td>
       <td>${escapeHtml(a.policy) || '—'}</td>
       <td><strong>${fmt(a.balance)}</strong></td>
@@ -526,6 +529,7 @@ function signOut() {
   idToken = null; currentUser = null;
   location.reload();
 }
+
 
 function initAuth() {
   if (!GOOGLE_CLIENT_ID) {
