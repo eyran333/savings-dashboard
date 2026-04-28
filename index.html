@@ -144,6 +144,7 @@
           <th class="sortable" data-sort="kind">סוג <span class="arrow"></span></th>
           <th class="sortable" data-sort="institution">מוסד <span class="arrow"></span></th>
           <th class="sortable" data-sort="employer">מעסיק <span class="arrow"></span></th>
+          <th class="sortable" data-sort="policy">פוליסה <span class="arrow"></span></th>
           <th class="sortable" data-sort="balance">יתרה <span class="arrow"></span></th>
           <th class="sortable" data-sort="monthlyDeposit">הפקדה חודשית <span class="arrow"></span></th>
           <th class="sortable" data-sort="mgmtFee">דמי ניהול <span class="arrow"></span></th>
@@ -232,11 +233,16 @@ function fmt(n) { return Math.round(n).toLocaleString() + ' ₪'; }
 
 function fmtFee(v) {
   if (v == null || v === '') return '—';
-  const s = String(v).trim();
-  // If the string is a plain number (no % yet), append %
-  if (/^-?\d+(\.\d+)?$/.test(s)) return s + '%';
-  // Already contains % or descriptive text → show as-is
-  return s;
+  // Sheets stores percent-formatted cells as fractions (0.6% → 0.006).
+  // If we got a plain number, convert back to a percentage display.
+  if (typeof v === 'number') {
+    if (v === 0) return '0%';
+    const pct = v * 100;
+    // Trim trailing zeros after decimal
+    return (Math.round(pct * 100) / 100) + '%';
+  }
+  // Strings (e.g. "הפקדה 1.5% צבירה 0.05%") show as-is.
+  return String(v).trim();
 }
 
 async function api(action, payload) {
@@ -350,7 +356,7 @@ function kindBadge(k) {
 
 function renderTable(rows) {
   const tb = document.getElementById('tbody');
-  if (!rows.length) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#95a5a6;padding:20px;">אין נכסים</td></tr>'; return; }
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#95a5a6;padding:20px;">אין נכסים</td></tr>'; return; }
   tb.innerHTML = rows.map(a => `
     <tr onclick="showDetail(${a.id})">
       <td>${escapeHtml(a.client)}</td>
@@ -358,6 +364,7 @@ function renderTable(rows) {
       <td>${kindBadge(a.kind)}</td>
       <td>${escapeHtml(a.institution)}</td>
       <td>${escapeHtml(a.employer)}</td>
+      <td>${escapeHtml(a.policy) || '—'}</td>
       <td><strong>${fmt(a.balance)}</strong></td>
       <td>${a.monthlyDeposit ? fmt(a.monthlyDeposit) : '—'}</td>
       <td>${escapeHtml(fmtFee(a.mgmtFee))}</td>
