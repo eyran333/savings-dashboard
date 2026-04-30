@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<!-- Net worth dashboard -->
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>משפחת אליאס - ביטוחים וחסכונות</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  body { font-family: "Segoe UI", Arial, sans-serif; background:#f4f6fa; margin:0; padding:24px; color:#222;}
+  h1 { text-align:center; margin:0 0 8px; color:#2c3e50;}
+  .subtitle { text-align:center; color:#7f8c8d; margin-bottom:24px;}
+  .kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; max-width:1400px; margin-left:auto; margin-right:auto;}
+  .kpi { background:#fff; padding:18px 24px; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.06); text-align:center; border-top:4px solid #3498db;}
+  .kpi.networth { border-top-color:#27ae60;}
+  .kpi.networth .value { filter: blur(10px); transition: filter 0.25s ease; cursor:pointer; user-select:none;}
+  .kpi.networth:hover .value, .kpi.networth .value.revealed { filter: blur(0);}
+  .kpi.networth::after { content:"🔒 רחף לחשיפה"; display:block; font-size:10px; color:#95a5a6; margin-top:4px;}
+  .kpi.networth:hover::after, .kpi.networth.revealed::after { content:"";}
+  .kpi.monthly { border-top-color:#3498db;}
+  .kpi.coverage { border-top-color:#9b59b6;}
+  .kpi.count { border-top-color:#f39c12;}
+  .kpi .value { font-size:26px; font-weight:700; color:#2c3e50;}
+  .kpi .sub { font-size:11px; color:#95a5a6; margin-top:2px;}
+  .kpi .label { font-size:13px; color:#7f8c8d; margin-top:4px; font-weight:600;}
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:20px; max-width:1400px; margin:0 auto;}
+  .card { background:#fff; padding:20px; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+  .card.full { grid-column: 1 / -1;}
+  .card h2 { margin:0 0 16px; font-size:18px; color:#2c3e50; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;}
+  .card h2 .hint { font-size:12px; font-weight:400; color:#95a5a6;}
+  canvas { max-height:380px; cursor:pointer;}
+  table { width:100%; border-collapse:collapse; font-size:13px;}
+  th, td { padding:8px 6px; text-align:right; border-bottom:1px solid #ecf0f1;}
+  th { background:#f8f9fb; color:#34495e; font-weight:600; position:sticky; top:0; white-space:nowrap;}
+  tbody tr { cursor:pointer; transition:background 0.15s;}
+  tbody tr:hover { background:#eef5fb;}
+  .tbl-wrap { max-height:550px; overflow:auto;}
+  .filter-bar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;}
+  .filter-bar input { padding:8px 12px; border:1px solid #ddd; border-radius:6px; flex:1; min-width:180px; font-size:14px;}
+  .filter-bar select { padding:8px 10px; border:1px solid #ddd; border-radius:6px; font-size:14px; background:#fff; cursor:pointer;}
+  th.sortable { cursor:pointer; user-select:none;}
+  th.sortable:hover { background:#eef2f7;}
+  th.sortable .arrow { display:inline-block; width:10px; color:#3498db; font-weight:700;}
+  .chip { background:#3498db; color:#fff; padding:4px 10px; border-radius:14px; font-size:12px; cursor:pointer;}
+  .chip.clear { background:#e74c3c;}
+  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600;}
+  .badge.savings { background:#e0f5e9; color:#27ae60;}
+  .badge.insurance { background:#f3e5f5; color:#8e44ad;}
+  .btn { padding:8px 16px; border-radius:6px; border:none; cursor:pointer; font-size:14px; font-weight:600; transition:opacity 0.15s;}
+  .btn:hover { opacity:0.85;} .btn:disabled { opacity:0.5; cursor:wait;}
+  .btn-primary { background:#27ae60; color:#fff;}
+  .btn-secondary { background:#95a5a6; color:#fff;}
+  .btn-danger { background:#e74c3c; color:#fff;}
+  .btn-edit { background:#f39c12; color:#fff;}
+  .btn-sm { padding:4px 10px; font-size:12px;}
+  .row-actions { display:flex; gap:6px;}
+  .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:100; align-items:center; justify-content:center;}
+  .modal-bg.open { display:flex;}
+  .modal { background:#fff; border-radius:12px; padding:24px; max-width:680px; width:92%; max-height:88vh; overflow:auto; box-shadow:0 10px 40px rgba(0,0,0,0.3);}
+  .modal h3 { margin:0 0 16px; color:#2c3e50;}
+  .modal .row { display:flex; gap:12px; padding:10px 0; border-bottom:1px solid #ecf0f1;}
+  .modal .row .label { font-weight:600; color:#7f8c8d; min-width:130px;}
+  .modal .row .val { flex:1; color:#2c3e50; word-break:break-word;}
+  .close { float:left; background:none; border:none; font-size:24px; cursor:pointer; color:#95a5a6;}
+  .close:hover { color:#e74c3c;}
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .form-grid .full { grid-column: 1 / -1;}
+  .field { display:flex; flex-direction:column; gap:4px;}
+  .field label { font-size:13px; color:#34495e; font-weight:600;}
+  .field input, .field textarea, .field select { padding:8px 10px; border:1px solid #ddd; border-radius:6px; font-size:14px; font-family:inherit;}
+  .field textarea { min-height:60px; resize:vertical;}
+  .form-actions { display:flex; gap:8px; margin-top:16px; padding-top:16px; border-top:1px solid #ecf0f1;}
+  #status { position:fixed; top:16px; left:16px; background:#2c3e50; color:#fff; padding:10px 16px; border-radius:6px; font-size:13px; z-index:200; opacity:0; transition:opacity 0.3s;}
+  #status.show { opacity:1;}
+  #status.err { background:#c0392b;}
+  #loginGate { position:fixed; inset:0; background:#f4f6fa; z-index:300; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px;}
+  #loginGate h2 { color:#2c3e50; margin:0;}
+  #loginGate p { color:#7f8c8d; max-width:420px; text-align:center;}
+  #loginErr { color:#c0392b; font-weight:600;}
+  #userBar { position:fixed; top:16px; right:16px; background:#fff; padding:8px 14px; border-radius:20px; box-shadow:0 2px 8px rgba(0,0,0,0.08); display:none; align-items:center; gap:10px; font-size:13px; z-index:150;}
+  #userBar.on { display:flex;}
+  #userBar img { width:28px; height:28px; border-radius:50%;}
+  #userBar button { background:#e74c3c; color:#fff; border:none; padding:4px 10px; border-radius:12px; cursor:pointer; font-size:12px;}
+</style>
+</head>
+<body>
+
+<div id="loginGate">
+  <h2>🔒 משפחת אליאס - ביטוחים וחסכונות</h2>
+  <p>יש להיכנס עם חשבון Gmail מורשה כדי לצפות בנכסים.</p>
+  <div id="googleBtn"></div>
+  <div id="loginErr"></div>
+</div>
+
+<div id="userBar">
+  <img id="userAvatar" src="" alt="">
+  <span id="userEmail"></span>
+  <button onclick="signOut()">התנתק</button>
+</div>
+
+<div id="status"></div>
+
+<h1>💰 שווי חסכונות - משפחת אליאס</h1>
+<div class="subtitle">סקירת חסכונות, פנסיות, השתלמות, וכיסוי ביטוחי</div>
+
+<div class="kpis">
+  <div class="kpi networth"><div class="label">שווי נטו</div><div class="value" id="kpiNet">0 ₪</div><div class="sub">סך חסכונות וצבירה</div></div>
+  <div class="kpi monthly"><div class="label">הפקדה חודשית</div><div class="value" id="kpiMonthly">0 ₪</div><div class="sub" id="kpiYearly">0 ₪ בשנה</div></div>
+  <div class="kpi coverage"><div class="label">כיסוי ביטוחי</div><div class="value" id="kpiCoverage">0 ₪</div><div class="sub">סך פיצוי ביטוחי במקרה אסון</div></div>
+  <div class="kpi count"><div class="label">מספר נכסים</div><div class="value" id="kpiCount">0</div><div class="sub" id="kpiCountSub">0 חסכונות, 0 ביטוחים</div></div>
+</div>
+
+<div class="grid">
+  <div class="card"><h2>שווי לפי מוצר<span class="hint">לחץ על פלח לסינון</span></h2><canvas id="productChart"></canvas></div>
+  <div class="card"><h2>שווי לפי בן/בת משפחה<span class="hint">לחץ על פלח לסינון</span></h2><canvas id="clientChart"></canvas></div>
+  <div class="card"><h2>שווי לפי מוסד פיננסי<span class="hint">לחץ על עמודה לסינון</span></h2><canvas id="institutionChart"></canvas></div>
+  <div class="card"><h2>הפקדה חודשית לפי מוצר</h2><canvas id="monthlyChart"></canvas></div>
+
+  <div class="card full">
+    <h2>רשימת נכסים
+      <span class="toolbar">
+        <button class="btn btn-primary" onclick="openForm()">+ הוסף נכס</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadData()">🔄 רענן</button>
+      </span>
+    </h2>
+    <div class="filter-bar">
+      <input id="search" placeholder="חיפוש לפי מוצר, מוסד, פוליסה…">
+      <select id="filterClient"><option value="">כל בני המשפחה</option></select>
+      <select id="filterProduct"><option value="">כל המוצרים</option></select>
+      <select id="filterInstitution"><option value="">כל המוסדות</option></select>
+      <select id="filterKind">
+        <option value="">חסכונות + ביטוח</option>
+        <option value="savings">רק חסכונות</option>
+        <option value="insurance">רק ביטוח</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" onclick="resetFilters()">נקה סינונים</button>
+      <span id="activeFilter"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table id="tbl">
+        <thead><tr>
+          <th class="sortable" data-sort="client">לקוח <span class="arrow"></span></th>
+          <th class="sortable" data-sort="product">מוצר <span class="arrow"></span></th>
+          <th class="sortable" data-sort="kind">סוג <span class="arrow"></span></th>
+          <th class="sortable" data-sort="institution">מוסד <span class="arrow"></span></th>
+          <th class="sortable" data-sort="track">מסלול השקעה <span class="arrow"></span></th>
+          <th class="sortable" data-sort="employer">מעסיק <span class="arrow"></span></th>
+          <th class="sortable" data-sort="policy">פוליסה <span class="arrow"></span></th>
+          <th class="sortable" data-sort="balance">יתרה <span class="arrow"></span></th>
+          <th class="sortable" data-sort="monthlyDeposit">הפקדה חודשית <span class="arrow"></span></th>
+          <th class="sortable" data-sort="mgmtFee">דמי ניהול <span class="arrow"></span></th>
+          <th>פעולות</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="detailBg" onclick="if(event.target.id==='detailBg')closeDetail()">
+  <div class="modal">
+    <button class="close" onclick="closeDetail()">×</button>
+    <h3 id="detailTitle"></h3>
+    <div id="detailBody"></div>
+    <div class="form-actions">
+      <button class="btn btn-edit" id="detailEditBtn">✎ ערוך</button>
+      <button class="btn btn-danger" id="detailDelBtn">🗑 מחק</button>
+      <button class="btn btn-secondary" onclick="closeDetail()">סגור</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="formBg" onclick="if(event.target.id==='formBg')closeForm()">
+  <div class="modal">
+    <button class="close" onclick="closeForm()">×</button>
+    <h3 id="formTitle">הוסף נכס</h3>
+    <form id="assetForm" onsubmit="saveAsset(event)">
+      <input type="hidden" id="f_id">
+      <div class="form-grid">
+        <div class="field"><label>לקוח *</label><input id="f_client" required placeholder="ערן / לינוי / נועם / שיראל / עדן"></div>
+        <div class="field"><label>מוצר *</label><input id="f_product" required placeholder="קרן השתלמות, פנסייה…"></div>
+        <div class="field"><label>סוג *</label><select id="f_kind" required>
+          <option value="savings">חיסכון</option>
+          <option value="insurance">ביטוח</option>
+        </select></div>
+        <div class="field"><label>מוסד *</label><input id="f_institution" required></div>
+        <div class="field"><label>מעסיק / מקור</label><input id="f_employer"></div>
+        <div class="field"><label>פוליסה / מס' חשבון</label><input id="f_policy"></div>
+        <div class="field"><label>יתרה / סכום ביטוח (₪) *</label><input id="f_balance" type="number" step="0.01" min="0" required></div>
+        <div class="field"><label>הפקדה חודשית (₪)</label><input id="f_monthlyDeposit" type="number" step="0.01" min="0" value="0"></div>
+        <div class="field"><label>דמי ניהול</label><input id="f_mgmtFee" placeholder="0.6% מצבירה"></div>
+        <div class="field"><label>מסלול</label><input id="f_track"></div>
+        <div class="field"><label>סוכן</label><input id="f_agent"></div>
+        <div class="field full"><label>הערות</label><textarea id="f_notes"></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" id="saveBtn">שמור</button>
+        <button type="button" class="btn btn-secondary" onclick="closeForm()">ביטול</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 1. WEB_APP_URL — Apps Script web app /exec URL of the savings sheet
+// 2. GOOGLE_CLIENT_ID — same OAuth Client ID as the coupons site
+// 3. ALLOWED_EMAILS — same allowlist
+// ============================================================
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxYBeIu5g5uhzRq3SSxF108yYWyFn3eiKOa9XbY0pv1pZLXjB0Tskb5yt9xV_kz2Bny/exec';
+const GOOGLE_CLIENT_ID = '404089340105-qcg1d6ha4dedppamov3hrqlm7on36lv2.apps.googleusercontent.com';
+const ALLOWED_EMAILS = 'eyran333@gmail.com,linoy_isr@yahoo.com,linoybarnea@gmail.com'.split(',').map(e => e.trim());
+
+let idToken = null;
+let currentUser = null;
+let assets = [];
+let filter = {type:null, value:null};
+let sortState = {key:'balance', dir:-1};
+let charts = {};
+
+const PALETTE = ['#3498db','#e74c3c','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#34495e','#16a085','#d35400','#c0392b','#8e44ad','#2980b9','#ff6b6b'];
+
+function status(msg, isError) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'show' + (isError ? ' err' : '');
+  clearTimeout(status._t);
+  status._t = setTimeout(()=>el.className='', 2500);
+}
+
+function fmt(n) { return Math.round(n).toLocaleString() + ' ₪'; }
+
+function fmtFee(v) {
+  if (v == null || v === '') return '—';
+  // Sheets stores percent-formatted cells as fractions (0.6% → 0.006).
+  // If we got a plain number, convert back to a percentage display.
+  if (typeof v === 'number') {
+    if (v === 0) return '0%';
+    const pct = v * 100;
+    // Trim trailing zeros after decimal
+    return (Math.round(pct * 100) / 100) + '%';
+  }
+  // Strings (e.g. "הפקדה 1.5% צבירה 0.05%") show as-is.
+  return String(v).trim();
+}
+
+async function api(action, payload) {
+  const res = await fetch(WEB_APP_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify({action, idToken, ...payload}),
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'unknown error');
+  return data;
+}
+
+async function loadData() {
+  if (!WEB_APP_URL) { status('יש להגדיר WEB_APP_URL בקוד', true); return; }
+  try {
+    status('טוען…');
+    const res = await fetch(WEB_APP_URL + '?idToken=' + encodeURIComponent(idToken||''));
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'שגיאה לא ידועה');
+    assets = (data.assets || []).map(a => ({
+      ...a,
+      id:Number(a.id),
+      balance:Number(a.balance)||0,
+      monthlyDeposit:Number(a.monthlyDeposit)||0,
+      kind: (a.kind || 'savings').toLowerCase(),
+    }));
+    populateFilterOptions();
+    renderKpis(); renderCharts(); applyFilter();
+    status('נטען ✓');
+  } catch(e) { status('טעינה נכשלה: '+e.message, true); }
+}
+
+function renderKpis() {
+  const sav = assets.filter(a => a.kind === 'savings');
+  const ins = assets.filter(a => a.kind === 'insurance');
+  const net = sav.reduce((s,a)=>s+a.balance, 0);
+  const monthly = assets.reduce((s,a)=>s+a.monthlyDeposit, 0);
+  const cov = ins.reduce((s,a)=>s+a.balance, 0);
+  document.getElementById('kpiNet').textContent = fmt(net);
+  document.getElementById('kpiMonthly').textContent = fmt(monthly);
+  document.getElementById('kpiYearly').textContent = fmt(monthly*12) + ' בשנה';
+  document.getElementById('kpiCoverage').textContent = fmt(cov);
+  document.getElementById('kpiCount').textContent = assets.length;
+  document.getElementById('kpiCountSub').textContent = `${sav.length} חסכונות, ${ins.length} ביטוחים`;
+}
+
+function populateFilterOptions() {
+  const fill = (id, vals, allLabel) => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">${allLabel}</option>` + [...new Set(vals)].sort().map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    sel.value = cur;
+  };
+  fill('filterClient', assets.map(a=>a.client).filter(Boolean), 'כל בני המשפחה');
+  fill('filterProduct', assets.map(a=>a.product).filter(Boolean), 'כל המוצרים');
+  fill('filterInstitution', assets.map(a=>a.institution).filter(Boolean), 'כל המוסדות');
+}
+
+function applyFilter() {
+  const q = (document.getElementById('search').value||'').toLowerCase();
+  const fc = document.getElementById('filterClient').value;
+  const fp = document.getElementById('filterProduct').value;
+  const fi = document.getElementById('filterInstitution').value;
+  const fk = document.getElementById('filterKind').value;
+  let rows = assets.filter(a => {
+    if (q && !(String(a.product).toLowerCase().includes(q) || String(a.institution).toLowerCase().includes(q) || String(a.policy).toLowerCase().includes(q))) return false;
+    if (fc && a.client !== fc) return false;
+    if (fp && a.product !== fp) return false;
+    if (fi && a.institution !== fi) return false;
+    if (fk && a.kind !== fk) return false;
+    if (filter.type === 'product' && a.product !== filter.value) return false;
+    if (filter.type === 'client' && a.client !== filter.value) return false;
+    if (filter.type === 'institution' && a.institution !== filter.value) return false;
+    return true;
+  });
+  if (sortState.key) {
+    const k = sortState.key, d = sortState.dir;
+    rows.sort((a,b) => {
+      let va = a[k], vb = b[k];
+      if (typeof va === 'number' && typeof vb === 'number') return (va-vb)*d;
+      return String(va||'').localeCompare(String(vb||''), 'he') * d;
+    });
+  }
+  renderTable(rows);
+  const af = document.getElementById('activeFilter');
+  af.innerHTML = filter.type ? `<span class="chip">סינון גרף: ${filter.value}</span><span class="chip clear" onclick="clearGraphFilter()">נקה ✕</span>` : '';
+  document.querySelectorAll('th.sortable').forEach(th => {
+    const arrow = th.querySelector('.arrow');
+    arrow.textContent = th.dataset.sort === sortState.key ? (sortState.dir===1 ? '▲' : '▼') : '';
+  });
+}
+function clearGraphFilter() { filter={type:null,value:null}; applyFilter(); }
+function resetFilters() {
+  document.getElementById('search').value = '';
+  ['filterClient','filterProduct','filterInstitution','filterKind'].forEach(id=>document.getElementById(id).value='');
+  filter = {type:null,value:null};
+  sortState = {key:'balance',dir:-1};
+  applyFilter();
+}
+
+function escapeHtml(s) {
+  return String(s==null?'':s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function kindBadge(k) {
+  return k === 'insurance'
+    ? '<span class="badge insurance">ביטוח</span>'
+    : '<span class="badge savings">חיסכון</span>';
+}
+
+function renderTable(rows) {
+  const tb = document.getElementById('tbody');
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#95a5a6;padding:20px;">אין נכסים</td></tr>'; return; }
+  tb.innerHTML = rows.map(a => `
+    <tr onclick="showDetail(${a.id})">
+      <td>${escapeHtml(a.client)}</td>
+      <td>${escapeHtml(a.product)}</td>
+      <td>${kindBadge(a.kind)}</td>
+      <td>${escapeHtml(a.institution)}</td>
+      <td>${escapeHtml(a.track) || '—'}</td>
+      <td>${escapeHtml(a.employer)}</td>
+      <td>${escapeHtml(a.policy) || '—'}</td>
+      <td><strong>${fmt(a.balance)}</strong></td>
+      <td>${a.monthlyDeposit ? fmt(a.monthlyDeposit) : '—'}</td>
+      <td>${escapeHtml(fmtFee(a.mgmtFee))}</td>
+      <td onclick="event.stopPropagation()">
+        <div class="row-actions">
+          <button class="btn btn-edit btn-sm" onclick="openForm(${a.id})">ערוך</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAsset(${a.id})">מחק</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function showDetail(id) {
+  const a = assets.find(x => x.id===id); if (!a) return;
+  document.getElementById('detailTitle').textContent = `${a.product} — ${a.client}`;
+  const fields = [
+    ['לקוח', a.client], ['מוצר', a.product], ['סוג', kindBadge(a.kind)],
+    ['מוסד', a.institution], ['מעסיק', a.employer || '—'], ['פוליסה', a.policy || '—'],
+    ['יתרה / סכום ביטוח', '<strong>'+fmt(a.balance)+'</strong>'],
+    ['הפקדה חודשית', a.monthlyDeposit ? fmt(a.monthlyDeposit) : '—'],
+    ['דמי ניהול', fmtFee(a.mgmtFee)], ['מסלול', a.track || '—'],
+    ['סוכן', a.agent || '—'], ['הערות', escapeHtml(a.notes) || '—'],
+  ];
+  document.getElementById('detailBody').innerHTML = fields.map(([l,v])=>`<div class="row"><div class="label">${l}</div><div class="val">${v}</div></div>`).join('');
+  document.getElementById('detailEditBtn').onclick = () => { closeDetail(); openForm(id); };
+  document.getElementById('detailDelBtn').onclick = () => { closeDetail(); deleteAsset(id); };
+  document.getElementById('detailBg').classList.add('open');
+}
+function closeDetail() { document.getElementById('detailBg').classList.remove('open'); }
+
+function openForm(id) {
+  const isEdit = id !== undefined;
+  const a = isEdit ? assets.find(x=>x.id===id) : null;
+  document.getElementById('formTitle').textContent = isEdit ? 'ערוך נכס' : 'הוסף נכס';
+  document.getElementById('f_id').value = isEdit ? id : '';
+  ['client','product','kind','institution','employer','policy','balance','monthlyDeposit','mgmtFee','track','agent','notes'].forEach(k=>{
+    const el = document.getElementById('f_'+k);
+    el.value = a ? (a[k] ?? '') : (k==='kind' ? 'savings' : (k==='monthlyDeposit'?0:''));
+  });
+  document.getElementById('formBg').classList.add('open');
+}
+function closeForm() { document.getElementById('formBg').classList.remove('open'); }
+
+async function saveAsset(e) {
+  e.preventDefault();
+  const idVal = document.getElementById('f_id').value;
+  const data = {};
+  ['client','product','kind','institution','employer','policy','mgmtFee','track','agent','notes'].forEach(k => {
+    data[k] = document.getElementById('f_'+k).value.trim();
+  });
+  data.balance = parseFloat(document.getElementById('f_balance').value) || 0;
+  data.monthlyDeposit = parseFloat(document.getElementById('f_monthlyDeposit').value) || 0;
+  const btn = document.getElementById('saveBtn'); btn.disabled = true;
+  try {
+    if (idVal !== '') await api('update', {asset: {id:parseInt(idVal), ...data}});
+    else await api('add', {asset: data});
+    closeForm(); status('נשמר ✓'); await loadData();
+  } catch(err) { status('שמירה נכשלה: '+err.message, true); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteAsset(id) {
+  const a = assets.find(x=>x.id===id); if (!a) return;
+  if (!confirm(`למחוק "${a.product} — ${a.client}"?`)) return;
+  try { await api('delete', {id}); status('נמחק ✓'); await loadData(); }
+  catch(err) { status('מחיקה נכשלה: '+err.message, true); }
+}
+
+document.addEventListener('keydown', e => { if (e.key==='Escape') { closeDetail(); closeForm(); }});
+document.getElementById('search').addEventListener('input', applyFilter);
+['filterClient','filterProduct','filterInstitution','filterKind'].forEach(id => document.getElementById(id).addEventListener('change', applyFilter));
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    if (sortState.key === k) sortState.dir = -sortState.dir;
+    else { sortState.key = k; sortState.dir = -1; }
+    applyFilter();
+  });
+});
+
+function aggregate(arr, keyFn, valFn) {
+  const m = {};
+  arr.forEach(x => { const k = keyFn(x); if(!k) return; m[k] = (m[k]||0) + valFn(x); });
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+}
+
+function renderCharts() {
+  Object.values(charts).forEach(ch => ch && ch.destroy());
+  const sav = assets.filter(a=>a.kind==='savings');
+
+  // 1. Pie — savings by product
+  const byProduct = aggregate(sav, a=>a.product, a=>a.balance);
+  charts.product = new Chart(document.getElementById('productChart'), {
+    type:'doughnut',
+    data:{labels:byProduct.map(e=>e[0]), datasets:[{data:byProduct.map(e=>e[1]),backgroundColor:PALETTE}]},
+    options:{responsive:true, plugins:{legend:{position:'right'},
+      tooltip:{callbacks:{label:ctx=>{const t=ctx.dataset.data.reduce((a,b)=>a+b,0);return `${ctx.label}: ${fmt(ctx.parsed)} (${(ctx.parsed/t*100).toFixed(1)}%)`;}}}},
+      onClick:(e,el)=>{ if(el.length){ filter={type:'product',value:byProduct[el[0].index][0]}; applyFilter(); }}}
+  });
+
+  // 2. Pie — savings by family member
+  const byClient = aggregate(sav, a=>a.client, a=>a.balance);
+  charts.client = new Chart(document.getElementById('clientChart'), {
+    type:'doughnut',
+    data:{labels:byClient.map(e=>e[0]), datasets:[{data:byClient.map(e=>e[1]),backgroundColor:PALETTE}]},
+    options:{responsive:true, plugins:{legend:{position:'right'},
+      tooltip:{callbacks:{label:ctx=>{const t=ctx.dataset.data.reduce((a,b)=>a+b,0);return `${ctx.label}: ${fmt(ctx.parsed)} (${(ctx.parsed/t*100).toFixed(1)}%)`;}}}},
+      onClick:(e,el)=>{ if(el.length){ filter={type:'client',value:byClient[el[0].index][0]}; applyFilter(); }}}
+  });
+
+  // 3. Bar — savings by institution
+  const byInstitution = aggregate(sav, a=>a.institution, a=>a.balance);
+  charts.institution = new Chart(document.getElementById('institutionChart'), {
+    type:'bar',
+    data:{labels:byInstitution.map(e=>e[0]), datasets:[{label:'יתרה (₪)',data:byInstitution.map(e=>Math.round(e[1])),backgroundColor:'#3498db'}]},
+    options:{responsive:true, plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>fmt(ctx.parsed.y)}}},
+      scales:{y:{beginAtZero:true,ticks:{callback:v=>v.toLocaleString()}}},
+      onClick:(e,el)=>{ if(el.length){ filter={type:'institution',value:byInstitution[el[0].index][0]}; applyFilter(); }}}
+  });
+
+  // 4. Bar — monthly contribution by product (all assets)
+  const byMonthly = aggregate(assets.filter(a=>a.monthlyDeposit>0), a=>a.product, a=>a.monthlyDeposit);
+  charts.monthly = new Chart(document.getElementById('monthlyChart'), {
+    type:'bar',
+    data:{labels:byMonthly.map(e=>e[0]), datasets:[{label:'הפקדה חודשית (₪)',data:byMonthly.map(e=>Math.round(e[1])),backgroundColor:'#27ae60'}]},
+    options:{responsive:true, plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>fmt(ctx.parsed.y)+' /חודש'}}},
+      scales:{y:{beginAtZero:true,ticks:{callback:v=>v.toLocaleString()}}}}
+  });
+}
+
+// ---- Google Sign-In ----
+function handleCredentialResponse(response) {
+  const payload = JSON.parse(atob(response.credential.split('.')[1]));
+  const email = (payload.email || '').toLowerCase();
+  if (!ALLOWED_EMAILS.map(e=>e.toLowerCase()).includes(email)) {
+    document.getElementById('loginErr').textContent = `הכניסה אסורה עבור ${email}.`;
+    return;
+  }
+  idToken = response.credential;
+  currentUser = {email, name: payload.name, picture: payload.picture};
+  sessionStorage.setItem('savings_token', idToken);
+  sessionStorage.setItem('savings_user', JSON.stringify(currentUser));
+  showApp();
+}
+
+function showApp() {
+  document.getElementById('loginGate').style.display = 'none';
+  document.getElementById('userBar').classList.add('on');
+  document.getElementById('userEmail').textContent = currentUser.email;
+  document.getElementById('userAvatar').src = currentUser.picture || '';
+  loadData();
+}
+
+function signOut() {
+  sessionStorage.removeItem('savings_token');
+  sessionStorage.removeItem('savings_user');
+  idToken = null; currentUser = null;
+  location.reload();
+}
+
+
+function initAuth() {
+  if (!GOOGLE_CLIENT_ID) {
+    document.getElementById('loginErr').textContent = 'שגיאת הגדרה: חסר GOOGLE_CLIENT_ID.';
+    return;
+  }
+  const cachedToken = sessionStorage.getItem('savings_token');
+  const cachedUser = sessionStorage.getItem('savings_user');
+  if (cachedToken && cachedUser) {
+    try {
+      const payload = JSON.parse(atob(cachedToken.split('.')[1]));
+      if (payload.exp * 1000 > Date.now()) {
+        idToken = cachedToken;
+        currentUser = JSON.parse(cachedUser);
+        showApp();
+        return;
+      }
+    } catch(e){}
+  }
+  const tryInit = () => {
+    if (!window.google || !google.accounts || !google.accounts.id) { setTimeout(tryInit, 100); return; }
+    google.accounts.id.initialize({client_id: GOOGLE_CLIENT_ID, callback: handleCredentialResponse});
+    google.accounts.id.renderButton(document.getElementById('googleBtn'), {theme:'filled_blue', size:'large', text:'signin_with'});
+  };
+  tryInit();
+}
+
+initAuth();
+</script>
+</body>
+</html>
