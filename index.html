@@ -122,6 +122,7 @@
 <div class="tabbar">
   <button id="tabBtnSavings" class="active" onclick="switchTab('savings')">💰 חסכונות</button>
   <button id="tabBtnLoans" onclick="switchTab('loans')">🏦 הלוואות</button>
+  <button id="tabBtnExpenses" onclick="switchTab('expenses')">💸 הוצאות</button>
 </div>
 
 <div id="tabSavings">
@@ -227,6 +228,62 @@
   </div>
 </div><!-- /tabLoans -->
 
+<div id="tabExpenses" style="display:none;">
+  <div class="kpis">
+    <div class="kpi" style="border-top:4px solid #e74c3c;"><div class="label">סך תשלום חודשי</div><div class="value" id="kpiExpMonthly">0 ₪</div><div class="sub" id="kpiExpYearly">0 ₪ בשנה</div></div>
+    <div class="kpi" style="border-top:4px solid #e67e22;"><div class="label">הוצאה חודשית ממוצעת</div><div class="value" id="kpiExpAvg">0 ₪</div><div class="sub">לפריט</div></div>
+    <div class="kpi" style="border-top:4px solid #9b59b6;"><div class="label">מספר הוצאות</div><div class="value" id="kpiExpCount">0</div><div class="sub">פריטים חודשיים</div></div>
+  </div>
+  <div class="grid">
+    <div class="card full">
+      <h2>הוצאות חודשיות
+        <span class="toolbar">
+          <button class="btn btn-primary" onclick="openExpenseForm()">+ הוסף הוצאה</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadData()">🔄 רענן</button>
+        </span>
+      </h2>
+      <div class="filter-bar">
+        <input id="expenseSearch" placeholder="חיפוש לפי תיאור…">
+        <button class="btn btn-secondary btn-sm" onclick="resetExpenseFilters()">נקה</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th class="esortable" data-sort="description">תיאור <span class="arrow"></span></th>
+            <th class="esortable" data-sort="monthly">תשלום חודשי <span class="arrow"></span></th>
+            <th class="esortable" data-sort="yearly">תשלום שנתי / סכום <span class="arrow"></span></th>
+            <th>מספר תשלומים</th>
+            <th class="esortable" data-sort="endOfPayment">סיום תשלום <span class="arrow"></span></th>
+            <th>פעולות</th>
+          </tr></thead>
+          <tbody id="expensesTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><!-- /tabExpenses -->
+
+<div class="modal-bg" id="expenseFormBg" onclick="if(event.target.id==='expenseFormBg')closeExpenseForm()">
+  <div class="modal">
+    <button class="close" onclick="closeExpenseForm()">×</button>
+    <h3 id="expenseFormTitle">הוסף הוצאה</h3>
+    <form id="expenseForm" onsubmit="saveExpense(event)">
+      <input type="hidden" id="fe_id">
+      <div class="form-grid">
+        <div class="field full"><label>תיאור *</label><input id="fe_description" required></div>
+        <div class="field"><label>תשלום חודשי (₪) *</label><input id="fe_monthly" type="number" step="0.01" min="0" required></div>
+        <div class="field"><label>תשלום שנתי / סכום (₪)</label><input id="fe_yearly" type="number" step="0.01" min="0"></div>
+        <div class="field"><label>מספר תשלומים</label><input id="fe_numPayments"></div>
+        <div class="field"><label>סיום תשלום</label><input id="fe_endOfPayment" placeholder="למשל 1.6.2027"></div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" id="expenseSaveBtn">שמור</button>
+        <button type="button" class="btn btn-secondary" onclick="closeExpenseForm()">ביטול</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="modal-bg" id="detailBg" onclick="if(event.target.id==='detailBg')closeDetail()">
   <div class="modal">
     <button class="close" onclick="closeDetail()">×</button>
@@ -289,6 +346,8 @@ let idToken = null;
 let currentUser = null;
 let assets = [];
 let loans = [];
+let expenses = [];
+let expenseSort = {key:'monthly', dir:-1};
 let filter = {type:null, value:null};
 let activeTab = 'savings';
 let formSrc = 'savings';
@@ -344,8 +403,9 @@ async function loadData() {
     const norm = a => ({...a, id:Number(a.id), balance:Number(a.balance)||0, monthlyDeposit:Number(a.monthlyDeposit)||0});
     assets = (data.savings || data.assets || []).map(a => ({...norm(a), kind:(a.kind||'savings'), _src:'savings'}));
     loans = (data.loans || []).map(a => ({...norm(a), _src:'loans'}));   // keep original kind casing
+    expenses = (data.expenses || []).map(e => ({...e, id:Number(e.id), monthly:Number(e.monthly)||0, yearly:Number(e.yearly)||0, _src:'expenses'}));
     populateFilterOptions();
-    renderKpis(); renderCharts(); applyFilter(); renderLoans();
+    renderKpis(); renderCharts(); applyFilter(); renderLoans(); renderExpenses();
     status('נטען ✓');
   } catch(e) { status('טעינה נכשלה: '+e.message, true); }
 }
@@ -439,10 +499,12 @@ function resetLoanFilters() {
 
 function switchTab(t) {
   activeTab = t;
-  document.getElementById('tabSavings').style.display = (t==='savings') ? '' : 'none';
-  document.getElementById('tabLoans').style.display   = (t==='loans')   ? '' : 'none';
+  document.getElementById('tabSavings').style.display   = (t==='savings')  ? '' : 'none';
+  document.getElementById('tabLoans').style.display     = (t==='loans')    ? '' : 'none';
+  document.getElementById('tabExpenses').style.display  = (t==='expenses') ? '' : 'none';
   document.getElementById('tabBtnSavings').classList.toggle('active', t==='savings');
   document.getElementById('tabBtnLoans').classList.toggle('active', t==='loans');
+  document.getElementById('tabBtnExpenses').classList.toggle('active', t==='expenses');
 }
 
 function populateFilterOptions() {
@@ -621,6 +683,119 @@ document.querySelectorAll('th.lsortable').forEach(th => {
     applyLoanFilter();
   });
 });
+
+// Expenses tab controls
+const _es = document.getElementById('expenseSearch');
+if (_es) _es.addEventListener('input', applyExpenseFilter);
+document.querySelectorAll('th.esortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    if (expenseSort.key === k) expenseSort.dir = -expenseSort.dir;
+    else { expenseSort.key = k; expenseSort.dir = -1; }
+    applyExpenseFilter();
+  });
+});
+
+function renderExpenses() {
+  const total = expenses.reduce((s,e)=>s+(Number(e.monthly)||0), 0);
+  const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+  set('kpiExpMonthly', fmt(total));
+  set('kpiExpYearly', fmt(total*12) + ' בשנה');
+  set('kpiExpAvg', fmt(expenses.length ? total/expenses.length : 0));
+  set('kpiExpCount', expenses.length);
+  applyExpenseFilter();
+}
+
+function applyExpenseFilter() {
+  const q = (document.getElementById('expenseSearch').value||'').toLowerCase();
+  let rows = expenses.filter(e => !q || String(e.description).toLowerCase().includes(q));
+  const k = expenseSort.key, d = expenseSort.dir;
+  if (k) rows.sort((a,b)=>{
+    let va=a[k], vb=b[k];
+    if (typeof va==='number' && typeof vb==='number') return (va-vb)*d;
+    return String(va||'').localeCompare(String(vb||''),'he')*d;
+  });
+  const tb = document.getElementById('expensesTbody');
+  if (!tb) return;
+  tb.innerHTML = rows.length ? rows.map(e => `
+    <tr onclick="showExpenseDetail(${e.id})">
+      <td>${escapeHtml(e.description)}</td>
+      <td><strong>${fmt(e.monthly)}</strong></td>
+      <td>${e.yearly ? fmt(e.yearly) : '—'}</td>
+      <td>${escapeHtml(e.numPayments) || '—'}</td>
+      <td>${escapeHtml(e.endOfPayment) || '—'}</td>
+      <td onclick="event.stopPropagation()">
+        <div class="row-actions">
+          <button class="btn btn-edit btn-sm" onclick="openExpenseForm(${e.id})">ערוך</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id})">מחק</button>
+        </div>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:#95a5a6;padding:20px;">אין הוצאות</td></tr>';
+  document.querySelectorAll('th.esortable').forEach(th => {
+    const ar = th.querySelector('.arrow');
+    if (ar) ar.textContent = th.dataset.sort === expenseSort.key ? (expenseSort.dir===1 ? '▲' : '▼') : '';
+  });
+}
+
+function resetExpenseFilters() {
+  document.getElementById('expenseSearch').value='';
+  expenseSort = {key:'monthly', dir:-1};
+  applyExpenseFilter();
+}
+
+function openExpenseForm(id) {
+  const editing = (id !== undefined && id !== null);
+  const e = editing ? expenses.find(x=>x.id===id) : null;
+  document.getElementById('expenseFormTitle').textContent = editing ? 'ערוך הוצאה' : 'הוסף הוצאה';
+  document.getElementById('fe_id').value = editing ? id : '';
+  ['description','monthly','yearly','numPayments','endOfPayment'].forEach(k=>{
+    document.getElementById('fe_'+k).value = e ? (e[k] ?? '') : '';
+  });
+  document.getElementById('expenseFormBg').classList.add('open');
+}
+function closeExpenseForm() { document.getElementById('expenseFormBg').classList.remove('open'); }
+
+async function saveExpense(ev) {
+  ev.preventDefault();
+  const idVal = document.getElementById('fe_id').value;
+  const data = {
+    description: document.getElementById('fe_description').value.trim(),
+    monthly: parseFloat(document.getElementById('fe_monthly').value) || 0,
+    yearly: parseFloat(document.getElementById('fe_yearly').value) || 0,
+    numPayments: document.getElementById('fe_numPayments').value.trim(),
+    endOfPayment: document.getElementById('fe_endOfPayment').value.trim(),
+  };
+  const btn = document.getElementById('expenseSaveBtn'); btn.disabled = true;
+  try {
+    if (idVal !== '') await api('update', {sheet:'expenses', asset:{id:parseInt(idVal), ...data}});
+    else await api('add', {sheet:'expenses', asset:data});
+    closeExpenseForm(); status('נשמר ✓'); await loadData();
+  } catch(err) { status('שמירה נכשלה: '+err.message, true); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteExpense(id) {
+  const e = expenses.find(x=>x.id===id); if (!e) return;
+  if (!confirm(`למחוק "${e.description}"?`)) return;
+  try { await api('delete', {sheet:'expenses', id}); status('נמחק ✓'); await loadData(); }
+  catch(err) { status('מחיקה נכשלה: '+err.message, true); }
+}
+
+function showExpenseDetail(id) {
+  const e = expenses.find(x=>x.id===id); if (!e) return;
+  document.getElementById('detailTitle').textContent = e.description;
+  const fields = [
+    ['תיאור', e.description],
+    ['תשלום חודשי', '<strong>'+fmt(e.monthly)+'</strong>'],
+    ['תשלום שנתי / סכום', e.yearly ? fmt(e.yearly) : '—'],
+    ['מספר תשלומים', escapeHtml(e.numPayments) || '—'],
+    ['סיום תשלום', escapeHtml(e.endOfPayment) || '—'],
+  ];
+  document.getElementById('detailBody').innerHTML = fields.map(([l,v])=>`<div class="row"><div class="label">${l}</div><div class="val">${v}</div></div>`).join('');
+  document.getElementById('detailEditBtn').onclick = () => { closeDetail(); openExpenseForm(id); };
+  document.getElementById('detailDelBtn').onclick = () => { closeDetail(); deleteExpense(id); };
+  document.getElementById('detailBg').classList.add('open');
+}
 
 function aggregate(arr, keyFn, valFn) {
   const m = {};
