@@ -59,6 +59,13 @@
   .btn-secondary { background:#95a5a6; color:#fff;}
   .btn-danger { background:#e74c3c; color:#fff;}
   .btn-edit { background:#f39c12; color:#fff;}
+  /* Edit mode: drag rows to reorder */
+  .editmode-btn.on { background:#27ae60; color:#fff;}
+  .drag-handle { display:none; cursor:grab; color:#95a5a6; font-size:16px; padding:0 2px 0 0; user-select:none; touch-action:none; vertical-align:middle;}
+  table.edit-mode .drag-handle { display:inline-block;}
+  table.edit-mode tbody tr { cursor:default;}
+  table.edit-mode tbody tr.dragging { opacity:.5; background:#eaf4fb;}
+  body.dark table.edit-mode tbody tr.dragging { background:#1f3247;}
   .btn-sm { padding:4px 10px; font-size:12px;}
   .row-actions { display:flex; gap:6px;}
   .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
@@ -111,11 +118,9 @@
   .kb-ins { background:#f3e5f5; color:#8e44ad; }
   .kb-loan { background:#fdebd0; color:#b9770e; }
   .kb-mort { background:#fadbd8; color:#c0392b; }
-  .kb-bridge { background:#d6eaf8; color:#1f618d; }
   body.dark .kb-ins { background:#2a2438; color:#c39bd3; }
   body.dark .kb-loan { background:#3d3520; color:#f7c873; }
   body.dark .kb-mort { background:#3d2424; color:#ff8a80; }
-  body.dark .kb-bridge { background:#1f2e3d; color:#85c1e9; }
 
   /* === THEME TOGGLE === */
   #themeToggle { position:fixed; top:16px; left:16px; z-index:200; background:rgba(255,255,255,0.8); border:1px solid #d0d6dd; border-radius:50%; width:44px; height:44px; cursor:pointer; font-size:20px; box-shadow:0 2px 8px rgba(0,0,0,0.08); transition:transform .2s; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);}
@@ -236,6 +241,7 @@
     <h2>רשימת נכסים
       <span class="toolbar">
         <button class="btn btn-primary" onclick="openForm(undefined,'savings')">+ הוסף נכס</button>
+        <button class="btn btn-secondary btn-sm editmode-btn" data-tab="savings" onclick="toggleEditMode('savings')">✎ מצב עריכה</button>
         <button class="btn btn-secondary btn-sm" onclick="loadData()">🔄 רענן</button>
       </span>
     </h2>
@@ -285,6 +291,7 @@
       <h2>הלוואות, משכנתאות וביטוחים
         <span class="toolbar">
           <button class="btn btn-primary" onclick="openForm(undefined,'loans')">+ הוסף</button>
+          <button class="btn btn-secondary btn-sm editmode-btn" data-tab="loans" onclick="toggleEditMode('loans')">✎ מצב עריכה</button>
           <button class="btn btn-secondary btn-sm" onclick="loadData()">🔄 רענן</button>
         </span>
       </h2>
@@ -296,7 +303,6 @@
           <option value="">הכל</option>
           <option value="Loan">הלוואות</option>
           <option value="Mortgage">משכנתאות</option>
-          <option value="Bridging loan">הלוואות גישור</option>
           <option value="insurance">ביטוחים</option>
         </select>
         <button class="btn btn-secondary btn-sm" onclick="resetLoanFilters()">נקה סינונים</button>
@@ -333,6 +339,7 @@
       <h2>הוצאות חודשיות
         <span class="toolbar">
           <button class="btn btn-primary" onclick="openExpenseForm()">+ הוסף הוצאה</button>
+          <button class="btn btn-secondary btn-sm editmode-btn" data-tab="expenses" onclick="toggleEditMode('expenses')">✎ מצב עריכה</button>
           <button class="btn btn-secondary btn-sm" onclick="loadData()">🔄 רענן</button>
         </span>
       </h2>
@@ -405,7 +412,6 @@
           <option value="insurance">ביטוח</option>
           <option value="Loan">הלוואה</option>
           <option value="Mortgage">משכנתא</option>
-          <option value="Bridging loan">הלוואת גישור</option>
         </select></div>
         <div class="field"><label>מוסד *</label><input id="f_institution" required></div>
         <div class="field"><label>מעסיק / מקור</label><input id="f_employer"></div>
@@ -442,13 +448,13 @@ let currentUser = null;
 let assets = [];
 let loans = [];
 let expenses = [];
-let expenseSort = {key:'monthly', dir:-1};
+let expenseSort = {key:defaultSortKey('expenses','monthly'), dir:-1};
 let filter = {type:null, value:null};
 let activeTab = 'savings';
 let formSrc = 'savings';
-let loanSort = {key:'balance', dir:-1};
+let loanSort = {key:defaultSortKey('loans','balance'), dir:-1};
 function recordsFor(src){ return src==='loans' ? loans : assets; }
-let sortState = {key:'balance', dir:-1};
+let sortState = {key:defaultSortKey('savings','balance'), dir:-1};
 let charts = {};
 
 const PALETTE = ['#3498db','#e74c3c','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#34495e','#16a085','#d35400','#c0392b','#8e44ad','#2980b9','#ff6b6b'];
@@ -497,7 +503,7 @@ async function loadData() {
     if (!data.ok) throw new Error(data.error || 'שגיאה לא ידועה');
     const norm = a => ({...a, id:Number(a.id), balance:Number(a.balance)||0, monthlyDeposit:Number(a.monthlyDeposit)||0});
     assets = (data.savings || data.assets || []).map(a => ({...norm(a), kind:(a.kind||'savings'), _src:'savings'}));
-    loans = (data.loans || []).map(a => ({...norm(a), kind:(/^\s*bridging\s+loan\s*$/i.test(a.kind||'') ? 'Bridging loan' : a.kind), _src:'loans'}));   // keep original kind casing
+    loans = (data.loans || []).map(a => ({...norm(a), _src:'loans'}));   // keep original kind casing
     expenses = (data.expenses || []).map(e => ({...e, id:Number(e.id), monthly:Number(e.monthly)||0, yearly:Number(e.yearly)||0, _src:'expenses'}));
     populateFilterOptions();
     renderKpis(); renderCharts(); applyFilter(); renderLoans(); renderExpenses();
@@ -527,12 +533,11 @@ function renderKpis() {
 }
 
 // ===== Loans / mortgages / insurance tab =====
-function loanKindLabel(k){ return {insurance:'ביטוח', Loan:'הלוואה', Mortgage:'משכנתא', 'Bridging loan':'הלוואת גישור'}[k] || k; }
-function loanKindBadge(k){ const c={insurance:'kb-ins',Loan:'kb-loan',Mortgage:'kb-mort','Bridging loan':'kb-bridge'}[k]||''; return '<span class="kb '+c+'">'+loanKindLabel(k)+'</span>'; }
-const DEBT_KINDS = ['Loan','Mortgage','Bridging loan'];
+function loanKindLabel(k){ return {insurance:'ביטוח', Loan:'הלוואה', Mortgage:'משכנתא'}[k] || k; }
+function loanKindBadge(k){ const c={insurance:'kb-ins',Loan:'kb-loan',Mortgage:'kb-mort'}[k]||''; return '<span class="kb '+c+'">'+loanKindLabel(k)+'</span>'; }
 
 function renderLoans() {
-  const debtRows = loans.filter(l => DEBT_KINDS.includes(l.kind));
+  const debtRows = loans.filter(l => l.kind==='Loan' || l.kind==='Mortgage');
   const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
   animateMoney('kpiDebt', debtRows.reduce((s,l)=>s+l.balance, 0));
   animateMoney('kpiRepay', debtRows.reduce((s,l)=>s+l.monthlyDeposit, 0));
@@ -565,6 +570,7 @@ function applyLoanFilter() {
     if (fk && l.kind !== fk) return false;
     return true;
   });
+  rows = applyManualOrder('loans', rows);
   const k = loanSort.key, d = loanSort.dir;
   if (k) rows.sort((a,b) => {
     let va = a[k], vb = b[k];
@@ -574,8 +580,8 @@ function applyLoanFilter() {
   const tb = document.getElementById('loansTbody');
   if (!tb) return;
   tb.innerHTML = rows.length ? rows.map(l => `
-    <tr onclick="showDetail(${l.id},'loans')">
-      <td>${escapeHtml(l.client)}</td>
+    <tr data-id="${l.id}" onclick="showDetail(${l.id},'loans')">
+      <td><span class="drag-handle" title="גרור לשינוי סדר">⠿</span>${escapeHtml(l.client)}</td>
       <td>${escapeHtml(l.product)}</td>
       <td>${loanKindBadge(l.kind)}</td>
       <td>${escapeHtml(l.institution)}</td>
@@ -600,12 +606,13 @@ function applyLoanFilter() {
 function resetLoanFilters() {
   document.getElementById('loanSearch').value = '';
   ['loanFilterClient','loanFilterInstitution','loanFilterKind'].forEach(id=>document.getElementById(id).value='');
-  loanSort = {key:'balance', dir:-1};
+  loanSort = {key:defaultSortKey('loans','balance'), dir:-1};
   applyLoanFilter();
 }
 
 function switchTab(t) {
   activeTab = t;
+  Object.keys(ROW_TBODY).forEach(x => setEditMode(x, false));
   document.getElementById('tabSavings').style.display   = (t==='savings')  ? '' : 'none';
   document.getElementById('tabLoans').style.display     = (t==='loans')    ? '' : 'none';
   document.getElementById('tabExpenses').style.display  = (t==='expenses') ? '' : 'none';
@@ -613,6 +620,68 @@ function switchTab(t) {
   document.getElementById('tabBtnLoans').classList.toggle('active', t==='loans');
   document.getElementById('tabBtnExpenses').classList.toggle('active', t==='expenses');
 }
+
+// ===== Edit mode: drag rows to reorder (saved per tab in this browser) =====
+const ROW_TBODY = {savings:'tbody', loans:'loansTbody', expenses:'expensesTbody'};
+function defaultSortKey(tab, key){ return manualOrder(tab) ? null : key; }   // a saved manual order replaces the default column sort
+function manualOrder(tab){ try { return JSON.parse(localStorage.getItem('order_'+tab)) || null; } catch(e){ return null; } }
+function saveManualOrder(tab, ids){ try { localStorage.setItem('order_'+tab, JSON.stringify(ids)); } catch(e){} }
+function applyManualOrder(tab, rows){
+  const order = manualOrder(tab); if (!order) return rows;
+  const rank = new Map(order.map((id,i)=>[id,i]));
+  const pos = r => rank.has(r.id) ? rank.get(r.id) : order.length;   // unknown (new) rows go last
+  return rows.slice().sort((a,b) => pos(a) - pos(b));
+}
+function clearColumnSort(tab){
+  if (tab==='savings') sortState = {key:null, dir:-1};
+  else if (tab==='loans') loanSort = {key:null, dir:-1};
+  else expenseSort = {key:null, dir:-1};
+}
+function setEditMode(tab, on){
+  document.getElementById(ROW_TBODY[tab]).closest('table').classList.toggle('edit-mode', on);
+  document.querySelectorAll(`.editmode-btn[data-tab="${tab}"]`).forEach(b => {
+    b.classList.toggle('on', on);
+    b.textContent = on ? '✔ סיום עריכה' : '✎ מצב עריכה';
+  });
+}
+function toggleEditMode(tab){
+  const on = !document.getElementById(ROW_TBODY[tab]).closest('table').classList.contains('edit-mode');
+  Object.keys(ROW_TBODY).forEach(x => setEditMode(x, false));
+  setEditMode(tab, on);
+  status(on ? 'מצב עריכה: גררו את ⠿ לשינוי סדר' : 'סדר השורות נשמר ✓');
+}
+
+let dragRow = null, dragMoved = false;
+document.addEventListener('pointerdown', e => {
+  const handle = e.target.closest('.drag-handle'); if (!handle) return;
+  const tr = handle.closest('tr'); if (!tr) return;
+  e.preventDefault();
+  dragRow = tr; dragMoved = false;
+  tr.classList.add('dragging');
+  handle.setPointerCapture(e.pointerId);
+});
+document.addEventListener('pointermove', e => {
+  if (!dragRow) return;
+  const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('tr[data-id]');
+  if (!over || over === dragRow || over.parentNode !== dragRow.parentNode) return;
+  const r = over.getBoundingClientRect();
+  over.parentNode.insertBefore(dragRow, e.clientY > r.top + r.height/2 ? over.nextSibling : over);
+  dragMoved = true;
+});
+function endDrag(){
+  if (!dragRow) return;
+  const tr = dragRow; dragRow = null;
+  tr.classList.remove('dragging');
+  if (!dragMoved) return;   // a plain click on the handle changes nothing
+  const tab = Object.keys(ROW_TBODY).find(t => ROW_TBODY[t] === tr.parentNode.id);
+  const visible = [...tr.parentNode.querySelectorAll('tr[data-id]')].map(r => Number(r.dataset.id));
+  const hidden = (manualOrder(tab) || []).filter(id => !visible.includes(id));   // rows hidden by a filter keep their place
+  saveManualOrder(tab, visible.concat(hidden));
+  clearColumnSort(tab);
+  ({savings:applyFilter, loans:applyLoanFilter, expenses:applyExpenseFilter})[tab]();
+}
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
 
 function populateFilterOptions() {
   const fill = (id, vals, allLabel) => {
@@ -643,6 +712,7 @@ function applyFilter() {
     if (filter.type === 'institution' && a.institution !== filter.value) return false;
     return true;
   });
+  rows = applyManualOrder('savings', rows);
   if (sortState.key) {
     const k = sortState.key, d = sortState.dir;
     rows.sort((a,b) => {
@@ -664,7 +734,7 @@ function resetFilters() {
   document.getElementById('search').value = '';
   ['filterClient','filterProduct','filterInstitution','filterKind'].forEach(id=>document.getElementById(id).value='');
   filter = {type:null,value:null};
-  sortState = {key:'balance',dir:-1};
+  sortState = {key:defaultSortKey('savings','balance'),dir:-1};
   applyFilter();
 }
 
@@ -682,8 +752,8 @@ function renderTable(rows) {
   const tb = document.getElementById('tbody');
   if (!rows.length) { tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#95a5a6;padding:20px;">אין נכסים</td></tr>'; return; }
   tb.innerHTML = rows.map(a => `
-    <tr onclick="showDetail(${a.id},'savings')">
-      <td>${escapeHtml(a.client)}</td>
+    <tr data-id="${a.id}" onclick="showDetail(${a.id},'savings')">
+      <td><span class="drag-handle" title="גרור לשינוי סדר">⠿</span>${escapeHtml(a.client)}</td>
       <td>${escapeHtml(a.product)}</td>
       <td>${kindBadge(a.kind)}</td>
       <td>${escapeHtml(a.institution)}</td>
@@ -703,6 +773,7 @@ function renderTable(rows) {
 }
 
 function showDetail(id, src) {
+  if (document.querySelector('table.edit-mode')) return;
   src = src || 'savings';
   const a = recordsFor(src).find(x => x.id===id); if (!a) return;
   const badge = (src==='loans') ? loanKindBadge(a.kind) : kindBadge(a.kind);
@@ -816,6 +887,7 @@ function renderExpenses() {
 function applyExpenseFilter() {
   const q = (document.getElementById('expenseSearch').value||'').toLowerCase();
   let rows = expenses.filter(e => !q || String(e.description).toLowerCase().includes(q));
+  rows = applyManualOrder('expenses', rows);
   const k = expenseSort.key, d = expenseSort.dir;
   if (k) rows.sort((a,b)=>{
     let va=a[k], vb=b[k];
@@ -825,8 +897,8 @@ function applyExpenseFilter() {
   const tb = document.getElementById('expensesTbody');
   if (!tb) return;
   tb.innerHTML = rows.length ? rows.map(e => `
-    <tr onclick="showExpenseDetail(${e.id})">
-      <td>${escapeHtml(e.description)}</td>
+    <tr data-id="${e.id}" onclick="showExpenseDetail(${e.id})">
+      <td><span class="drag-handle" title="גרור לשינוי סדר">⠿</span>${escapeHtml(e.description)}</td>
       <td><strong>${fmt(e.monthly)}</strong></td>
       <td>${e.yearly ? fmt(e.yearly) : '—'}</td>
       <td>${escapeHtml(e.numPayments) || '—'}</td>
@@ -846,7 +918,7 @@ function applyExpenseFilter() {
 
 function resetExpenseFilters() {
   document.getElementById('expenseSearch').value='';
-  expenseSort = {key:'monthly', dir:-1};
+  expenseSort = {key:defaultSortKey('expenses','monthly'), dir:-1};
   applyExpenseFilter();
 }
 
@@ -889,6 +961,7 @@ async function deleteExpense(id) {
 }
 
 function showExpenseDetail(id) {
+  if (document.querySelector('table.edit-mode')) return;
   const e = expenses.find(x=>x.id===id); if (!e) return;
   document.getElementById('detailTitle').textContent = e.description;
   const fields = [
