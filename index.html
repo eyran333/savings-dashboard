@@ -118,9 +118,11 @@
   .kb-ins { background:#f3e5f5; color:#8e44ad; }
   .kb-loan { background:#fdebd0; color:#b9770e; }
   .kb-mort { background:#fadbd8; color:#c0392b; }
+  .kb-bridge { background:#d6eaf8; color:#1f618d; }
   body.dark .kb-ins { background:#2a2438; color:#c39bd3; }
   body.dark .kb-loan { background:#3d3520; color:#f7c873; }
   body.dark .kb-mort { background:#3d2424; color:#ff8a80; }
+  body.dark .kb-bridge { background:#1f2e3d; color:#85c1e9; }
 
   /* === THEME TOGGLE === */
   #themeToggle { position:fixed; top:16px; left:16px; z-index:200; background:rgba(255,255,255,0.8); border:1px solid #d0d6dd; border-radius:50%; width:44px; height:44px; cursor:pointer; font-size:20px; box-shadow:0 2px 8px rgba(0,0,0,0.08); transition:transform .2s; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);}
@@ -303,6 +305,7 @@
           <option value="">הכל</option>
           <option value="Loan">הלוואות</option>
           <option value="Mortgage">משכנתאות</option>
+          <option value="Bridging loan">הלוואות גישור</option>
           <option value="insurance">ביטוחים</option>
         </select>
         <button class="btn btn-secondary btn-sm" onclick="resetLoanFilters()">נקה סינונים</button>
@@ -412,6 +415,7 @@
           <option value="insurance">ביטוח</option>
           <option value="Loan">הלוואה</option>
           <option value="Mortgage">משכנתא</option>
+          <option value="Bridging loan">הלוואת גישור</option>
         </select></div>
         <div class="field"><label>מוסד *</label><input id="f_institution" required></div>
         <div class="field"><label>מעסיק / מקור</label><input id="f_employer"></div>
@@ -503,7 +507,7 @@ async function loadData() {
     if (!data.ok) throw new Error(data.error || 'שגיאה לא ידועה');
     const norm = a => ({...a, id:Number(a.id), balance:Number(a.balance)||0, monthlyDeposit:Number(a.monthlyDeposit)||0});
     assets = (data.savings || data.assets || []).map(a => ({...norm(a), kind:(a.kind||'savings'), _src:'savings'}));
-    loans = (data.loans || []).map(a => ({...norm(a), _src:'loans'}));   // keep original kind casing
+    loans = (data.loans || []).map(a => ({...norm(a), kind:(/^\s*bridging\s+loan\s*$/i.test(a.kind||'') ? 'Bridging loan' : a.kind), _src:'loans'}));   // keep original kind casing
     expenses = (data.expenses || []).map(e => ({...e, id:Number(e.id), monthly:Number(e.monthly)||0, yearly:Number(e.yearly)||0, _src:'expenses'}));
     populateFilterOptions();
     renderKpis(); renderCharts(); applyFilter(); renderLoans(); renderExpenses();
@@ -533,11 +537,12 @@ function renderKpis() {
 }
 
 // ===== Loans / mortgages / insurance tab =====
-function loanKindLabel(k){ return {insurance:'ביטוח', Loan:'הלוואה', Mortgage:'משכנתא'}[k] || k; }
-function loanKindBadge(k){ const c={insurance:'kb-ins',Loan:'kb-loan',Mortgage:'kb-mort'}[k]||''; return '<span class="kb '+c+'">'+loanKindLabel(k)+'</span>'; }
+function loanKindLabel(k){ return {insurance:'ביטוח', Loan:'הלוואה', Mortgage:'משכנתא', 'Bridging loan':'הלוואת גישור'}[k] || k; }
+function loanKindBadge(k){ const c={insurance:'kb-ins',Loan:'kb-loan',Mortgage:'kb-mort','Bridging loan':'kb-bridge'}[k]||''; return '<span class="kb '+c+'">'+loanKindLabel(k)+'</span>'; }
+const DEBT_KINDS = ['Loan','Mortgage','Bridging loan'];
 
 function renderLoans() {
-  const debtRows = loans.filter(l => l.kind==='Loan' || l.kind==='Mortgage');
+  const debtRows = loans.filter(l => DEBT_KINDS.includes(l.kind));
   const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
   animateMoney('kpiDebt', debtRows.reduce((s,l)=>s+l.balance, 0));
   animateMoney('kpiRepay', debtRows.reduce((s,l)=>s+l.monthlyDeposit, 0));
