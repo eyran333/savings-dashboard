@@ -59,6 +59,10 @@
   .btn-secondary { background:#95a5a6; color:#fff;}
   .btn-danger { background:#e74c3c; color:#fff;}
   .btn-edit { background:#f39c12; color:#fff;}
+  /* Frozen rows: greyed out, excluded from totals */
+  tr.frozen td:not(:last-child) { opacity:.5;}
+  .frozen-tag { display:inline-block; background:#d6eaf8; color:#1f618d; padding:1px 7px; border-radius:10px; font-size:11px; font-weight:600; white-space:nowrap;}
+  body.dark .frozen-tag { background:#1f2e3d; color:#85c1e9;}
   /* Edit mode: drag rows to reorder */
   .editmode-btn.on { background:#27ae60; color:#fff;}
   .drag-handle { display:none; cursor:grab; color:#95a5a6; font-size:16px; padding:0 2px 0 0; user-select:none; touch-action:none; vertical-align:middle;}
@@ -527,13 +531,14 @@ function animateNumber(elId, target, suffix='', duration=800){
 function animateMoney(elId, x){ animateNumber(elId, Math.round(x), ' ₪'); }
 
 function renderKpis() {
-  const net = assets.reduce((s,a)=>s+a.balance, 0);
-  const monthly = assets.reduce((s,a)=>s+a.monthlyDeposit, 0);
+  const live = liveRows('savings', assets);
+  const net = live.reduce((s,a)=>s+a.balance, 0);
+  const monthly = live.reduce((s,a)=>s+a.monthlyDeposit, 0);
   animateMoney('kpiNet', net);
   animateMoney('kpiMonthly', monthly);
   document.getElementById('kpiYearly').textContent = fmt(monthly*12) + ' בשנה';
-  animateNumber('kpiCount', assets.length);
-  const sub = document.getElementById('kpiCountSub'); if (sub) sub.textContent = assets.length + ' חסכונות';
+  animateNumber('kpiCount', live.length);
+  const sub = document.getElementById('kpiCountSub'); if (sub) sub.textContent = live.length + ' חסכונות';
 }
 
 // ===== Loans / mortgages / insurance tab =====
@@ -542,12 +547,13 @@ function loanKindBadge(k){ const c={insurance:'kb-ins',Loan:'kb-loan',Mortgage:'
 const DEBT_KINDS = ['Loan','Mortgage','Bridging loan'];
 
 function renderLoans() {
-  const debtRows = loans.filter(l => DEBT_KINDS.includes(l.kind));
+  const liveLoans = liveRows('loans', loans);
+  const debtRows = liveLoans.filter(l => DEBT_KINDS.includes(l.kind));
   const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
   animateMoney('kpiDebt', debtRows.reduce((s,l)=>s+l.balance, 0));
   animateMoney('kpiRepay', debtRows.reduce((s,l)=>s+l.monthlyDeposit, 0));
   set('kpiRepayYr', fmt(debtRows.reduce((s,l)=>s+l.monthlyDeposit, 0)*12) + ' בשנה');
-  animateMoney('kpiInsCov', loans.filter(l => l.kind==='insurance').reduce((s,l)=>s+l.balance, 0));
+  animateMoney('kpiInsCov', liveLoans.filter(l => l.kind==='insurance').reduce((s,l)=>s+l.balance, 0));
   populateLoanFilterOptions();
   applyLoanFilter();
 }
@@ -585,8 +591,8 @@ function applyLoanFilter() {
   const tb = document.getElementById('loansTbody');
   if (!tb) return;
   tb.innerHTML = rows.length ? rows.map(l => `
-    <tr data-id="${l.id}" onclick="showDetail(${l.id},'loans')">
-      <td><span class="drag-handle" title="גרור לשינוי סדר">⠿</span>${escapeHtml(l.client)}</td>
+    <tr data-id="${l.id}" class="${isFrozen('loans',l.id)?'frozen':''}" onclick="showDetail(${l.id},'loans')">
+      <td><span class="drag-handle" title="גרור לשינוי סדר">⠿</span>${escapeHtml(l.client)}${frozenTag('loans',l.id)}</td>
       <td>${escapeHtml(l.product)}</td>
       <td>${loanKindBadge(l.kind)}</td>
       <td>${escapeHtml(l.institution)}</td>
@@ -597,6 +603,7 @@ function applyLoanFilter() {
       <td>${escapeHtml(l.notes) || '—'}</td>
       <td onclick="event.stopPropagation()">
         <div class="row-actions">
+          ${freezeButton('loans',l.id)}
           <button class="btn btn-edit btn-sm" onclick="openForm(${l.id},'loans')">ערוך</button>
           <button class="btn btn-danger btn-sm" onclick="deleteAsset(${l.id},'loans')">מחק</button>
         </div>
@@ -625,6 +632,42 @@ function switchTab(t) {
   document.getElementById('tabBtnLoans').classList.toggle('active', t==='loans');
   document.getElementById('tabBtnExpenses').classList.toggle('active', t==='expenses');
 }
+
+// ===== Freeze rows: paused rows stay in the table but leave the totals and charts =====
+function frozenMap(tab){ try { return JSON.parse(localStorage.getItem('frozen_'+tab)) || {}; } catch(e){ return {}; } }
+function saveFrozenMap(tab, m){ try { localStorage.setItem('frozen_'+tab, JSON.stringify(m)); } catch(e){} }
+function todayStr(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function isFrozen(tab, id){
+  const m = frozenMap(tab);
+  if (!(id in m)) return false;
+  const until = m[id];
+  if (until && until < todayStr()) { delete m[id]; saveFrozenMap(tab, m); return false; }   // the freeze period is over
+  return true;
+}
+function liveRows(tab, arr){ return arr.filter(r => !isFrozen(tab, r.id)); }
+function frozenTag(tab, id){
+  if (!isFrozen(tab, id)) return '';
+  const until = frozenMap(tab)[id];
+  return ' <span class="frozen-tag">❄️ ' + (until ? 'עד ' + until : 'מוקפא') + '</span>';
+}
+function freezeButton(tab, id){
+  return isFrozen(tab, id)
+    ? `<button class="btn btn-secondary btn-sm" onclick="unfreezeRow('${tab}',${id})">☀️ הפעל</button>`
+    : `<button class="btn btn-secondary btn-sm" onclick="freezeRow('${tab}',${id})">❄️ הקפא</button>`;
+}
+function freezeRow(tab, id){
+  const ans = prompt('הקפאה עד תאריך (YYYY-MM-DD)\nהשאירו ריק להקפאה ללא הגבלה:', '');
+  if (ans === null) return;   // cancelled
+  const until = ans.trim();
+  if (until && !/^\d{4}-\d{2}-\d{2}$/.test(until)) { status('תאריך לא תקין, השתמשו בפורמט YYYY-MM-DD', true); return; }
+  const m = frozenMap(tab); m[id] = until; saveFrozenMap(tab, m);
+  refreshAll(); status('הושבת ❄️');
+}
+function unfreezeRow(tab, id){
+  const m = frozenMap(tab); delete m[id]; saveFrozenMap(tab, m);
+  refreshAll(); status('הופעל ✓');
+}
+function refreshAll(){ renderKpis(); renderCharts(); applyFilter(); renderLoans(); renderExpenses(); }
 
 // ===== Edit mode: drag rows to reorder (saved per tab in this browser) =====
 const ROW_TBODY = {savings:'tbody', loans:'loansTbody', expenses:'expensesTbody'};
@@ -757,8 +800,8 @@ function renderTable(rows) {
   const tb = document.getElementById('tbody');
   if (!rows.length) { tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#95a5a6;padding:20px;">אין נכסים</td></tr>'; return; }
   tb.innerHTML = rows.map(a => `
-    <tr data-id="${a.id}" onclick="showDetail(${a.id},'savings')">
-      <td><span class="drag-handle" title="גרור לשינוי סדר">⠿</span>${escapeHtml(a.client)}</td>
+    <tr data-id="${a.id}" class="${isFrozen('savings',a.id)?'frozen':''}" onclick="showDetail(${a.id},'savings')">
+      <td><span class="drag-handle" title="גרור לשינוי סדר">⠿</span>${escapeHtml(a.client)}${frozenTag('savings',a.id)}</td>
       <td>${escapeHtml(a.product)}</td>
       <td>${kindBadge(a.kind)}</td>
       <td>${escapeHtml(a.institution)}</td>
@@ -770,6 +813,7 @@ function renderTable(rows) {
       <td>${escapeHtml(fmtFee(a.mgmtFee))}</td>
       <td onclick="event.stopPropagation()">
         <div class="row-actions">
+          ${freezeButton('savings',a.id)}
           <button class="btn btn-edit btn-sm" onclick="openForm(${a.id},'savings')">ערוך</button>
           <button class="btn btn-danger btn-sm" onclick="deleteAsset(${a.id},'savings')">מחק</button>
         </div>
@@ -880,12 +924,13 @@ document.querySelectorAll('th.esortable').forEach(th => {
 });
 
 function renderExpenses() {
-  const total = expenses.reduce((s,e)=>s+(Number(e.monthly)||0), 0);
+  const live = liveRows('expenses', expenses);
+  const total = live.reduce((s,e)=>s+(Number(e.monthly)||0), 0);
   const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
   animateMoney('kpiExpMonthly', total);
   set('kpiExpYearly', fmt(total*12) + ' בשנה');
-  animateMoney('kpiExpAvg', expenses.length ? total/expenses.length : 0);
-  animateNumber('kpiExpCount', expenses.length);
+  animateMoney('kpiExpAvg', live.length ? total/live.length : 0);
+  animateNumber('kpiExpCount', live.length);
   applyExpenseFilter();
 }
 
@@ -902,14 +947,15 @@ function applyExpenseFilter() {
   const tb = document.getElementById('expensesTbody');
   if (!tb) return;
   tb.innerHTML = rows.length ? rows.map(e => `
-    <tr data-id="${e.id}" onclick="showExpenseDetail(${e.id})">
-      <td><span class="drag-handle" title="גרור לשינוי סדר">⠿</span>${escapeHtml(e.description)}</td>
+    <tr data-id="${e.id}" class="${isFrozen('expenses',e.id)?'frozen':''}" onclick="showExpenseDetail(${e.id})">
+      <td><span class="drag-handle" title="גרור לשינוי סדר">⠿</span>${escapeHtml(e.description)}${frozenTag('expenses',e.id)}</td>
       <td><strong>${fmt(e.monthly)}</strong></td>
       <td>${e.yearly ? fmt(e.yearly) : '—'}</td>
       <td>${escapeHtml(e.numPayments) || '—'}</td>
       <td>${escapeHtml(e.endOfPayment) || '—'}</td>
       <td onclick="event.stopPropagation()">
         <div class="row-actions">
+          ${freezeButton('expenses',e.id)}
           <button class="btn btn-edit btn-sm" onclick="openExpenseForm(${e.id})">ערוך</button>
           <button class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id})">מחק</button>
         </div>
@@ -990,7 +1036,7 @@ function aggregate(arr, keyFn, valFn) {
 
 function renderCharts() {
   Object.values(charts).forEach(ch => ch && ch.destroy());
-  const sav = assets.filter(a=>a.kind==='savings');
+  const sav = liveRows('savings', assets).filter(a=>a.kind==='savings');
 
   // 1. Pie — savings by product
   const byProduct = aggregate(sav, a=>a.product, a=>a.balance);
@@ -1024,7 +1070,7 @@ function renderCharts() {
   });
 
   // 4. Bar — monthly contribution by product (all assets)
-  const byMonthly = aggregate(assets.filter(a=>a.monthlyDeposit>0), a=>a.product, a=>a.monthlyDeposit);
+  const byMonthly = aggregate(liveRows('savings', assets).filter(a=>a.monthlyDeposit>0), a=>a.product, a=>a.monthlyDeposit);
   charts.monthly = new Chart(document.getElementById('monthlyChart'), {
     type:'bar',
     data:{labels:byMonthly.map(e=>e[0]), datasets:[{label:'הפקדה חודשית (₪)',data:byMonthly.map(e=>Math.round(e[1])),backgroundColor:'#27ae60'}]},
